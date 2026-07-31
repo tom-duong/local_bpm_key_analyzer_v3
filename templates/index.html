@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>BPM Analyzer</title>
+
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='styles.css') }}"
+    />
+  </head>
+
+  <body>
+    <main class="page-shell">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Fast audio analysis</p>
+
+          <h1>BPM Analyzer</h1>
+
+          <p class="hero-description">
+            Paste a supported media URL to estimate its tempo. The analyzer
+            reads only a short audio section and does not save the full media
+            file.
+          </p>
+        </div>
+
+        <form id="analyzer-form" class="analyzer-card">
+          <label for="media-url" class="field-label"> Media URL </label>
+
+          <div class="input-row">
+            <input
+              id="media-url"
+              name="url"
+              type="url"
+              placeholder="https://www.youtube.com/watch?v=..."
+              autocomplete="url"
+              spellcheck="false"
+              required
+            />
+
+            <button id="analyze-button" class="primary-button" type="submit">
+              Analyze BPM
+            </button>
+          </div>
+
+          <p class="input-help">Upload a youtube URL.</p>
+        </form>
+      </section>
+
+      <section id="status-card" class="status-card hidden" aria-live="polite">
+        <div class="status-header">
+          <div>
+            <p class="section-label">Status</p>
+            <h2 id="status-message">Preparing analysis…</h2>
+          </div>
+
+          <button id="stop-button" class="secondary-button" type="button">
+            Stop
+          </button>
+        </div>
+
+        <div class="progress-track" aria-hidden="true">
+          <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+        </div>
+
+        <p id="progress-text" class="progress-text">0%</p>
+      </section>
+
+      <section id="result-card" class="result-card hidden">
+        <div class="result-main">
+          <p class="section-label">Detected tempo</p>
+
+          <div class="bpm-display">
+            <span id="bpm-value">—</span>
+            <span class="bpm-unit">BPM</span>
+          </div>
+
+          <p class="precise-bpm" id="precise-bpm"></p>
+
+          <p class="accuracy-note">Typical accuracy: ±2 BPM</p>
+
+          <p id="precise-bpm" class="precise-bpm"></p>
+        </div>
+
+        <div class="result-grid">
+          <article class="detail-card">
+            <p class="detail-label">Confidence</p>
+            <p id="confidence-value" class="detail-value">—</p>
+          </article>
+
+          <article class="detail-card">
+            <p class="detail-label">Segments analyzed</p>
+            <p id="segments-value" class="detail-value">—</p>
+          </article>
+
+          <article class="detail-card">
+            <p class="detail-label">Duration</p>
+            <p id="duration-value" class="detail-value">—</p>
+          </article>
+
+          <article class="detail-card">
+            <p class="detail-label">Source</p>
+            <p id="source-value" class="detail-value">—</p>
+          </article>
+        </div>
+
+        <div class="media-panel">
+          <img id="thumbnail" class="thumbnail hidden" alt="" />
+
+          <div class="media-copy">
+            <p class="section-label">Media information</p>
+
+            <h2 id="media-title">Untitled media</h2>
+
+            <dl class="metadata-list">
+              <div>
+                <dt>Uploader</dt>
+                <dd id="uploader-value">—</dd>
+              </div>
+
+              <div>
+                <dt>Website</dt>
+                <dd id="website-value">—</dd>
+              </div>
+
+              <div>
+                <dt>Codec</dt>
+                <dd id="codec-value">—</dd>
+              </div>
+
+              <div>
+                <dt>Bitrate</dt>
+                <dd id="bitrate-value">—</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      </section>
+
+      <section id="error-card" class="error-card hidden" aria-live="assertive">
+        <p class="section-label">Analysis failed</p>
+        <p id="error-message"></p>
+      </section>
+    </main>
+
+    <script>
+      const form = document.getElementById("analyzer-form");
+      const mediaUrlInput = document.getElementById("media-url");
+      const analyzeButton = document.getElementById("analyze-button");
+      const stopButton = document.getElementById("stop-button");
+
+      const statusCard = document.getElementById("status-card");
+      const statusMessage = document.getElementById("status-message");
+      const progressBar = document.getElementById("progress-bar");
+      const progressText = document.getElementById("progress-text");
+
+      const resultCard = document.getElementById("result-card");
+      const errorCard = document.getElementById("error-card");
+      const errorMessage = document.getElementById("error-message");
+
+      let currentJobId = null;
+      let pollTimer = null;
+
+      function show(element) {
+        element.classList.remove("hidden");
+      }
+
+      function hide(element) {
+        element.classList.add("hidden");
+      }
+
+      function resetOutput() {
+        hide(resultCard);
+        hide(errorCard);
+        errorMessage.textContent = "";
+      }
+
+      function setBusy(isBusy) {
+        analyzeButton.disabled = isBusy;
+        mediaUrlInput.disabled = isBusy;
+        stopButton.disabled = !isBusy;
+
+        analyzeButton.textContent = isBusy ? "Analyzing…" : "Analyze BPM";
+      }
+
+      function updateProgress(progress, message) {
+        const safeProgress = Math.max(0, Math.min(100, Number(progress) || 0));
+
+        progressBar.style.width = `${safeProgress}%`;
+        progressText.textContent = `${Math.round(safeProgress)}%`;
+        statusMessage.textContent = message || "Analyzing…";
+      }
+
+      function formatDuration(seconds) {
+        if (
+          seconds === null ||
+          seconds === undefined ||
+          Number.isNaN(Number(seconds))
+        ) {
+          return "—";
+        }
+
+        const total = Math.max(0, Math.round(Number(seconds)));
+        const hours = Math.floor(total / 3600);
+        const minutes = Math.floor((total % 3600) / 60);
+        const remainingSeconds = total % 60;
+
+        if (hours > 0) {
+          return [
+            hours,
+            String(minutes).padStart(2, "0"),
+            String(remainingSeconds).padStart(2, "0"),
+          ].join(":");
+        }
+
+        return [minutes, String(remainingSeconds).padStart(2, "0")].join(":");
+      }
+
+      function setText(id, value, fallback = "—") {
+        const element = document.getElementById(id);
+
+        element.textContent =
+          value !== null && value !== undefined && value !== ""
+            ? value
+            : fallback;
+      }
+
+      function renderResult(result) {
+        setText("bpm-value", result.bpm);
+
+        setText(
+          "precise-bpm",
+          result.precise_bpm !== undefined
+            ? `Precise estimate: ${result.precise_bpm} BPM`
+            : "",
+        );
+
+        setText(
+          "confidence-value",
+          result.bpm_confidence_percent !== undefined
+            ? `${result.bpm_confidence_percent}%`
+            : "—",
+        );
+
+        setText("segments-value", result.segments_analyzed);
+
+        setText("duration-value", formatDuration(result.duration));
+
+        setText("source-value", result.source_type);
+
+        setText("media-title", result.title, "Untitled media");
+
+        setText("uploader-value", result.uploader);
+        setText("website-value", result.website);
+        setText("codec-value", result.codec);
+
+        setText(
+          "bitrate-value",
+          result.bitrate_kbps ? `${Math.round(result.bitrate_kbps)} kbps` : "—",
+        );
+
+        const thumbnail = document.getElementById("thumbnail");
+
+        if (result.thumbnail) {
+          thumbnail.src = result.thumbnail;
+          thumbnail.alt = result.title
+            ? `Thumbnail for ${result.title}`
+            : "Media thumbnail";
+
+          show(thumbnail);
+        } else {
+          thumbnail.removeAttribute("src");
+          thumbnail.alt = "";
+          hide(thumbnail);
+        }
+
+        hide(statusCard);
+        hide(errorCard);
+        show(resultCard);
+      }
+
+      function renderError(message) {
+        clearPolling();
+        currentJobId = null;
+        setBusy(false);
+
+        hide(statusCard);
+        hide(resultCard);
+
+        errorMessage.textContent = message || "An unknown error occurred.";
+
+        show(errorCard);
+      }
+
+      function clearPolling() {
+        if (pollTimer !== null) {
+          clearTimeout(pollTimer);
+          pollTimer = null;
+        }
+      }
+
+      async function pollJob(jobId) {
+        try {
+          const response = await fetch(`/api/jobs/${jobId}`);
+
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.error || "Unable to read analysis status.");
+          }
+
+          updateProgress(payload.progress, payload.message);
+
+          if (payload.status === "complete") {
+            clearPolling();
+            currentJobId = null;
+            setBusy(false);
+            renderResult(payload.result || {});
+            return;
+          }
+
+          if (payload.status === "error") {
+            throw new Error(payload.error || "Analysis failed.");
+          }
+
+          if (payload.status === "cancelled") {
+            clearPolling();
+            currentJobId = null;
+            setBusy(false);
+
+            updateProgress(0, "Analysis stopped.");
+            stopButton.disabled = true;
+
+            setTimeout(() => {
+              hide(statusCard);
+            }, 700);
+
+            return;
+          }
+
+          pollTimer = setTimeout(() => pollJob(jobId), 600);
+        } catch (error) {
+          renderError(error.message);
+        }
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        const url = mediaUrlInput.value.trim();
+
+        if (!url) {
+          renderError("Enter a media URL first.");
+          return;
+        }
+
+        clearPolling();
+        resetOutput();
+        setBusy(true);
+
+        show(statusCard);
+        updateProgress(0, "Starting analysis…");
+
+        try {
+          const response = await fetch("/api/jobs", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ url }),
+          });
+
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.error || "Unable to start analysis.");
+          }
+
+          currentJobId = payload.job_id;
+          pollJob(currentJobId);
+        } catch (error) {
+          renderError(error.message);
+        }
+      });
+
+      stopButton.addEventListener("click", async () => {
+        if (!currentJobId) {
+          return;
+        }
+
+        stopButton.disabled = true;
+        statusMessage.textContent = "Stopping analysis…";
+
+        try {
+          await fetch(`/api/jobs/${currentJobId}/cancel`, { method: "POST" });
+        } catch (error) {
+          renderError("The stop request could not be sent.");
+        }
+      });
+    </script>
+  </body>
+</html>
