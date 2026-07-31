@@ -17,5 +17,7 @@ the audio stream and FFmpeg to decode up to four short 30-second sections.
 
 A one-hour video therefore does not require downloading one hour of audio.
 
-## 
+## Requirements
+*Python
+*FFmpeg
 
