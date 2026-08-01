@@ -158,19 +158,9 @@ def extract_media(url: str) -> tuple[str, dict]:
         return stream_url, metadata
 
     except Exception as extractor_error:
-        # Direct media URLs may not require a website-specific extractor.
-        return url, {
-            "source_type": "Direct media URL",
-            "website": urlparse(url).hostname,
-            "title": Path(urlparse(url).path).name or None,
-            "uploader": None,
-            "duration": None,
-            "thumbnail": None,
-            "codec": None,
-            "bitrate_kbps": None,
-            "http_headers": browser_headers(),
-            "extractor_warning": str(extractor_error),
-        }
+        raise RuntimeError(
+            f"YouTube extraction failed: {extractor_error}"
+        ) from extractor_error
 
 
 def choose_sample_starts(duration: float | None) -> list[float]:
