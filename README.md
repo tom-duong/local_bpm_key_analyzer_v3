@@ -3,12 +3,7 @@
 This version detects:
 
 * BPM
-* musical key, such as C major or A minor
-* tonic/root/home note, such as C or A
 * confidence estimates
-
-It also includes a real Stop button. The backend runs each analysis as a job,
-and cancelling it terminates the active FFmpeg process.
 
 ## Efficient handling of long media
 
