@@ -562,11 +562,12 @@ def cancel_job(job_id: str):
 
 
 if __name__ == "__main__":
+    import os
 
-    threading.Timer(1.5, open_browser).start()
+    port = int(os.environ.get("PORT", 10000))
+
     app.run(
-        host="127.0.0.1",
-        port=5000,
+        host="0.0.0.0",
+        port=port,
         debug=False,
-        threaded=True,
     )
