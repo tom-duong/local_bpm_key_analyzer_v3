@@ -1,4 +1,5 @@
 Flask
+gunicorn
 yt-dlp
 librosa
-soundfile
+soundfiles
