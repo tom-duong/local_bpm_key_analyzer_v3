@@ -21,3 +21,6 @@ A one-hour video therefore does not require downloading one hour of audio.
 * Python
 * FFmpeg
 
+## Run directly on your PC/laptop
+
+Install the exe file, no requirements at all. From youtube URL to BPM in less than 15 seconds.
